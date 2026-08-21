@@ -1,0 +1,158 @@
+name: meridian-apple-release
+
+# Builds Meridian's pinned Apple XCFrameworks (iOS device+simulator, native
+# macOS) from this branch, with dSYMs, SHA-256 checksums, and build metadata.
+# The build recipes are copied verbatim from upstream's ios-release.yml /
+# macos-release.yml at the fork's base commit so the binaries are the ones
+# upstream would have shipped, plus any carried Meridian patches.
+#
+# Dispatch-only on purpose: a Meridian dependency is produced deliberately,
+# from a reviewed commit, never as a side effect of a push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        default: 0.1.0
+        description: Meridian package version (semantic; becomes tag apple-v<version>)
+      create_release:
+        type: boolean
+        default: false
+        description: Also publish a GitHub release apple-v<version> with the assets
+
+concurrency:
+  group: meridian-apple-release
+  cancel-in-progress: false
+
+jobs:
+  ios-dynamic:
+    runs-on: macos-26
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: platform/ios
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build XCFramework (iOS dynamic, device + simulator)
+        run: |
+          bazel build --compilation_mode=opt --features=dead_strip,thin_lto --objc_enable_binary_stripping \
+            --apple_generate_dsym --output_groups=+dsyms --//:renderer=metal \
+            //platform/ios:MapLibre.dynamic \
+            --embed_label=meridian_ios_${{ github.event.inputs.version }}_${GITHUB_SHA::9}
+          echo xcframework="$(bazel info execution_root)"/"$(bazel cquery --output=files --compilation_mode=opt --//:renderer=metal //platform/ios:MapLibre.dynamic)" >> "$GITHUB_ENV"
+
+      - name: Zip debug symbols
+        working-directory: ./bazel-bin/platform/ios/MapLibre.dynamic_dsyms
+        run: |
+          zip MapLibre_ios_device.framework.dSYM.zip MapLibre_ios_device.framework.dSYM/Contents/Resources/DWARF/MapLibre_ios_device MapLibre_ios_device.framework.dSYM/Contents/Info.plist
+          echo debug_symbols_ios="$(realpath MapLibre_ios_device.framework.dSYM.zip)" >> "$GITHUB_ENV"
+
+      - name: Assemble artifacts with licence
+        working-directory: .
+        run: |
+          cp "${{ env.xcframework }}" MapLibre.dynamic.xcframework.zip
+          chmod +w MapLibre.dynamic.xcframework.zip
+          zip MapLibre.dynamic.xcframework.zip LICENSE.md
+          cp "${{ env.debug_symbols_ios }}" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xcframework-ios
+          path: |
+            MapLibre.dynamic.xcframework.zip
+            MapLibre_ios_device.framework.dSYM.zip
+
+  macos-dynamic:
+    runs-on: macos-14
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: platform/macos
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install webp libuv
+
+      - name: Build XCFramework (native macOS dynamic, arm64 + x86_64)
+        run: |
+          bazel build --compilation_mode=opt --features=dead_strip,thin_lto --objc_enable_binary_stripping \
+            --apple_generate_dsym --output_groups=+dsyms --//:renderer=metal \
+            --//platform/macos:macos_loop=cfrunloop \
+            //platform/macos:MapLibre.dynamic \
+            --embed_label=meridian_macos_${{ github.event.inputs.version }}_${GITHUB_SHA::9}
+          echo xcframework="$(bazel info execution_root)"/"$(bazel cquery --output=files --compilation_mode=opt --//:renderer=metal --//platform/macos:macos_loop=cfrunloop //platform/macos:MapLibre.dynamic)" >> "$GITHUB_ENV"
+
+      - name: Zip debug symbols
+        working-directory: ./bazel-bin/platform/macos/MapLibre.dynamic_dsyms
+        run: |
+          zip MapLibre_macos_device.framework.dSYM.zip MapLibre_macos_device.framework.dSYM/Contents/Resources/DWARF/MapLibre_macos_device MapLibre_macos_device.framework.dSYM/Contents/Info.plist
+          echo debug_symbols_macos="$(realpath MapLibre_macos_device.framework.dSYM.zip)" >> "$GITHUB_ENV"
+
+      - name: Assemble artifacts with licence
+        working-directory: .
+        run: |
+          cp "${{ env.xcframework }}" MapLibre.macos.dynamic.xcframework.zip
+          chmod +w MapLibre.macos.dynamic.xcframework.zip
+          zip MapLibre.macos.dynamic.xcframework.zip LICENSE.md
+          cp "${{ env.debug_symbols_macos }}" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xcframework-macos
+          path: |
+            MapLibre.macos.dynamic.xcframework.zip
+            MapLibre_macos_device.framework.dSYM.zip
+
+  checksums-and-release:
+    runs-on: ubuntu-latest
+    needs: [ios-dynamic, macos-dynamic]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: Compute checksums and build metadata
+        run: |
+          mkdir -p out
+          find . -name "*.zip" -exec cp {} out/ \;
+          cd out
+          shasum -a 256 *.zip > checksums.txt
+          cat checksums.txt
+          cat > build-metadata.json <<EOF
+          {
+            "version": "${{ github.event.inputs.version }}",
+            "source_commit": "${GITHUB_SHA}",
+            "source_ref": "${GITHUB_REF_NAME}",
+            "workflow_run": "${{ github.run_id }}",
+            "renderer": "metal",
+            "recipes": "upstream ios-release.yml / macos-release.yml at fork base f51c4e0ecc03e1b24244b8b89e905aaeb56004ba"
+          }
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checksums-and-metadata
+          path: out/*
+
+      - name: Publish release
+        if: github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apple-v${{ github.event.inputs.version }}
+          name: apple-v${{ github.event.inputs.version }}
+          target_commitish: ${{ github.sha }}
+          files: out/*
+          fail_on_unmatched_files: true
+          body: |
+            Meridian Apple XCFrameworks built from `${{ github.sha }}` on `${{ github.ref_name }}`.
+            iOS dynamic (device + simulator) and native macOS dynamic (arm64 + x86_64), Metal renderer, with dSYMs.
+            `checksums.txt` carries the SHA-256 of every asset; the XCFramework zip checksums are the values `meridian-maplibre-apple-distribution` pins in `Package.swift`.
