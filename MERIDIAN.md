@@ -27,6 +27,7 @@ Meridian repository for the full plan, phases, and gates.
 |---|---|---|---|
 | (repo scaffolding) | `MERIDIAN.md` + `meridian-apple-release` workflow | n/a (Meridian-only) | permanent |
 | `94548c5` | Deactivate the old `RenderTerrain` before replacing it on a terrain change, and compare `Terrain::Impl` by value. Fixes one orphaned live terrain surface leaking per exaggeration/source change (sticky exaggeration, seam curtains, unbounded growth). Found by the Meridian Phase 0 harness. | to file against `feature/terrain-3d` | carried |
+| `40ddf1d` | Metal: fold the renderable's color/depth/stencil formats into the per-shader pipeline-state cache key. A drape-target pipeline (RGBA8/D32F/S8) was returned for main-framebuffer draws (BGRA8/D32F_S8) after toggling terrain off — aborts under Metal validation, i.e. any Xcode Debug run. Found by the Phase 0 harness `--auto-repro` under `MTL_DEBUG_LAYER=1`. | to file against `feature/terrain-3d` | carried |
 
 ## Building the Apple XCFrameworks
 
