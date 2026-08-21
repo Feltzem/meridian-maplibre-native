@@ -224,8 +224,26 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
     // Update terrain. The per-frame drawable/DEM update happens later in
     // updateRenderTree once the render sources have been updated; here we only
     // (re)create or drop the RenderTerrain to match the style.
+    //
+    // Compare by value, not Immutable pointer identity: a full style (re)load
+    // builds a fresh Terrain::Impl even when nothing about the terrain changed,
+    // and recreating RenderTerrain then would needlessly drop every DEM texture
+    // and mesh drawable on an unrelated style change.
     if (updateParameters->terrain) {
-        if (!renderTerrain || renderTerrain->getImpl() != *updateParameters->terrain) {
+        if (!renderTerrain || !(*renderTerrain->getImpl() == **updateParameters->terrain)) {
+            if (renderTerrain) {
+                // Same contract as the removal branch below: unregister the old
+                // mesh layer group before dropping its RenderTerrain, or the
+                // orchestrator keeps drawing the orphaned surface with the old
+                // exaggeration/source forever. Changing exaggeration used to
+                // stack one live surface per change - the tallest orphan won
+                // visually (exaggeration looked "sticky", with seam curtains
+                // where the stacked surfaces intersected) and the leak grew
+                // with every change.
+                UniqueChangeRequestVec terrainChanges;
+                renderTerrain->deactivate(terrainChanges);
+                addChanges(terrainChanges);
+            }
             renderTerrain = std::make_unique<RenderTerrain>(*updateParameters->terrain);
         }
     } else if (renderTerrain) {
