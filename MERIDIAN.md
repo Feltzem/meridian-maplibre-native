@@ -26,9 +26,7 @@ Meridian repository for the full plan, phases, and gates.
 | Commit | Purpose | Upstream link | Status |
 |---|---|---|---|
 | (repo scaffolding) | `MERIDIAN.md` + `meridian-apple-release` workflow | n/a (Meridian-only) | permanent |
-
-_No renderer patches are carried yet. Phase 2 work (Apple terrain API,
-camera anchoring, depth picking, Metal fixes) lands here as it happens._
+| `94548c5` | Deactivate the old `RenderTerrain` before replacing it on a terrain change, and compare `Terrain::Impl` by value. Fixes one orphaned live terrain surface leaking per exaggeration/source change (sticky exaggeration, seam curtains, unbounded growth). Found by the Meridian Phase 0 harness. | to file against `feature/terrain-3d` | carried |
 
 ## Building the Apple XCFrameworks
 
