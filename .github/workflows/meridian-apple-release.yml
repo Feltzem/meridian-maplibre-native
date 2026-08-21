@@ -97,12 +97,41 @@ jobs:
           zip MapLibre_macos_device.framework.dSYM.zip MapLibre_macos_device.framework.dSYM/Contents/Resources/DWARF/MapLibre_macos_device MapLibre_macos_device.framework.dSYM/Contents/Info.plist
           echo debug_symbols_macos="$(realpath MapLibre_macos_device.framework.dSYM.zip)" >> "$GITHUB_ENV"
 
-      - name: Assemble artifacts with licence
+      # rules_apple emits the macOS framework with a shallow (iOS-style) bundle
+      # layout; Xcode refuses to embed that on macOS ("contains Info.plist,
+      # expected Versions/Current/Resources/Info.plist"). Convert to the deep
+      # Versions/A layout with canonical symlinks, re-sign ad hoc, and re-zip
+      # preserving symlinks. Mirrors tools/terrain-harness/scripts/
+      # deepen-macos-framework.sh in the Meridian repository.
+      - name: Deepen macOS framework bundle and assemble with licence
         working-directory: .
         run: |
-          cp "${{ env.xcframework }}" MapLibre.macos.dynamic.xcframework.zip
-          chmod +w MapLibre.macos.dynamic.xcframework.zip
-          zip MapLibre.macos.dynamic.xcframework.zip LICENSE.md
+          rm -rf stage && mkdir stage
+          unzip -q "${{ env.xcframework }}" -d stage
+          FW="$(find stage -name "*.framework" -maxdepth 3 -type d | head -1)"
+          name="$(basename "$FW" .framework)"
+          test -f "$FW/$name"
+          pushd "$FW"
+          mkdir -p Versions/A/Resources
+          mv "$name" Versions/A/
+          for entry in Headers Modules; do
+            [ -e "$entry" ] && mv "$entry" Versions/A/ || true
+          done
+          for entry in *; do
+            case "$entry" in
+              Versions) ;;
+              *) mv "$entry" Versions/A/Resources/ ;;
+            esac
+          done
+          ln -s A Versions/Current
+          ln -s Versions/Current/"$name" "$name"
+          ln -s Versions/Current/Resources Resources
+          [ -d Versions/A/Headers ] && ln -s Versions/Current/Headers Headers || true
+          [ -d Versions/A/Modules ] && ln -s Versions/Current/Modules Modules || true
+          popd
+          codesign --force --sign - "$FW"
+          cp LICENSE.md stage/
+          (cd stage && zip -q -r --symlinks ../MapLibre.macos.dynamic.xcframework.zip *.xcframework LICENSE.md)
           cp "${{ env.debug_symbols_macos }}" .
 
       - uses: actions/upload-artifact@v4
