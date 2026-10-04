@@ -202,7 +202,7 @@ void Drawable::draw(PaintParameters& parameters) const {
 
     bindAttributes(renderPass);
     bindInstanceAttributes(renderPass);
-    bindTextures(renderPass);
+    bindTextures(renderPass, context);
     impl->uniformBuffers.bind(renderPass);
 
     if (!impl->indexes->getBuffer() || impl->indexes->getDirty()) {
@@ -416,11 +416,17 @@ void Drawable::bindInstanceAttributes(RenderPass& renderPass) const {
     }
 }
 
-void Drawable::bindTextures(RenderPass& renderPass) const {
+void Drawable::bindTextures(RenderPass& renderPass, Context& context) const {
     for (size_t id = 0; id < textures.size(); id++) {
-        if (const auto& texture = textures[id]) {
-            if (const auto& location = shader->getSamplerLocation(id)) {
-                static_cast<mtl::Texture2D&>(*texture).bind(renderPass, static_cast<int32_t>(*location));
+        if (const auto& location = shader->getSamplerLocation(id)) {
+            const auto index = static_cast<int32_t>(*location);
+            if (const auto& texture = textures[id]) {
+                static_cast<mtl::Texture2D&>(*texture).bind(renderPass, index);
+            } else {
+                // Metal validation requires a sampler at every location the shader declares
+                const auto& samplerState = context.getEmptySamplerState();
+                renderPass.setVertexSamplerState(samplerState, index);
+                renderPass.setFragmentSamplerState(samplerState, index);
             }
         }
     }

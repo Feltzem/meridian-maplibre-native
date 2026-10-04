@@ -305,6 +305,17 @@ const UniqueVertexBufferResource& Context::getEmptyVertexBuffer() {
     return emptyVertexBuffer;
 }
 
+const MTLSamplerStatePtr& Context::getEmptySamplerState() {
+    if (!emptySamplerState) {
+        // Bound to sampler locations a shader declares but the drawable has no texture for (e.g., the
+        // terrain DEM/depth samplers on symbols while terrain is off). The shader is expected not to
+        // sample them, but Metal validation requires every declared sampler to be bound.
+        auto samplerDescriptor = NS::TransferPtr(MTL::SamplerDescriptor::alloc()->init());
+        emptySamplerState = createMetalSamplerState(samplerDescriptor);
+    }
+    return emptySamplerState;
+}
+
 namespace {
 const auto clipMaskStencilMode = gfx::StencilMode{
     .test = gfx::StencilMode::Always(),

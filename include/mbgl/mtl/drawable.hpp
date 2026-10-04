@@ -25,6 +25,7 @@ using UniqueVertexBufferResource = std::unique_ptr<VertexBufferResource>;
 
 namespace mtl {
 
+class Context;
 class RenderPass;
 class Texture2D;
 class VertexArray;
@@ -73,7 +74,7 @@ protected:
 
     void bindInstanceAttributes(RenderPass&) const;
 
-    void bindTextures(RenderPass&) const;
+    void bindTextures(RenderPass&, Context&) const;
     void unbindTextures(RenderPass&) const noexcept;
 
     void uploadTextures(UploadPass&) const;

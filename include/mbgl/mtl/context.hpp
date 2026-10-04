@@ -151,6 +151,9 @@ public:
     /// Get a buffer to be bound to unused vertex buffers
     const UniqueVertexBufferResource& getEmptyVertexBuffer();
 
+    /// Get a sampler state to be bound to texture locations the drawable leaves unset
+    const MTLSamplerStatePtr& getEmptySamplerState();
+
     bool renderTileClippingMasks(gfx::RenderPass& renderPass,
                                  RenderStaticData& staticData,
                                  const std::vector<shaders::ClipUBO>& tileUBOs);
@@ -176,6 +179,7 @@ private:
     std::optional<BufferResource> tileIndexBuffer;
 
     UniqueVertexBufferResource emptyVertexBuffer;
+    MTLSamplerStatePtr emptySamplerState;
 
     gfx::ShaderProgramBasePtr clipMaskShader;
     MTLDepthStencilStatePtr clipMaskDepthStencilState;
